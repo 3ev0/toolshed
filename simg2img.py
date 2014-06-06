@@ -1,5 +1,13 @@
 __author__ = 'ivo'
 
+"""
+Copyright (C) 2010 The Android Open Source Project
+
+Script for converting Google Android sparse ext4 image files to regular ext4 image file.
+This code is copied and rewritten from the original Google code.
+
+"""
+
 import argparse
 import logging
 import struct
@@ -8,7 +16,7 @@ import os
 _log = logging.getLogger()
 
 class SparseHeader():
-    format = "<4cHHHHIIII"
+    format = "<IHHHHIIII"
     structlen = struct.calcsize(format)
 
     @classmethod
@@ -16,8 +24,11 @@ class SparseHeader():
         sh = cls()
         (sh.magic, sh.major_version, sh.minor_version,
         sh.file_hdr_sz, sh.chunk_hdr_sz, sh.blk_sz,
-        sh.total_blks, sh.total_chunks, sh.image_checksum) = struct.unpack(blob)
+        sh.total_blks, sh.total_chunks, sh.image_checksum) = struct.unpack(cls.format, blob)
         return sh
+
+    def __repr__(self):
+        return "<{}({})>".format(self.__class__.__name__, vars(self))
 
 class ChunkHeader():
     format = "<HHII"
@@ -26,11 +37,15 @@ class ChunkHeader():
     @classmethod
     def from_bytes(cls, blob):
         ch = cls()
-        (ch.chunk_type, ch.reserved1, ch.chunk_sz, ch.total_sz) = struct.unpack(blob)
+        (ch.chunk_type, ch.reserved1, ch.chunk_sz, ch.total_sz) = struct.unpack(cls.format, blob)
         return ch
 
+    def __repr__(self):
+        return "<{}({})>".format(self.__class__.__name__, vars(self))
+
+
 COPY_BUF_SIZE = (1024*1024)
-SPARSE_HEADER_MAGIC	= 0xed26ff3a
+SPARSE_HEADER_MAGIC	= 0xED26FF3A
 CHUNK_TYPE_RAW = 0xCAC1
 CHUNK_TYPE_FILL = 0xCAC2
 CHUNK_TYPE_CRC32 = 0xCAC4
@@ -118,8 +133,6 @@ def process_raw_chunk(infd, outfd, num_blocks, blk_sz, crc32):
 def process_fill_chunk(inputfd, outputfd, num_blocks, block_size, crc32):
     rest_len = num_blocks * block_size
     ret = 0
-    chunk = None
-    fill_val = None
     fillbuf = []
 
 # 	Fill copy_buf with the fill value
@@ -139,14 +152,11 @@ def process_fill_chunk(inputfd, outputfd, num_blocks, block_size, crc32):
     return num_blocks, crc32
 
 def process_skip_chunk(outputfd, num_blocks, block_size, crc32):
-# 	rest_len needs to be 64 bits, as the sparse file specifies the skip amount as a 32 bit value of blocks.
-
     rest_len = num_blocks * block_size
-    outputfd.seek(rest_len, whence=1)
+    outputfd.seek(rest_len, 1)
     return num_blocks, crc32
 
 def process_crc32_chunk(inputfd, crc32):
-    ret = 0
     file_crc32 = inputfd.read(4)
     if (len(file_crc32) != 4):
         _log.error("read returned an error copying a crc32 chunk")
@@ -156,12 +166,11 @@ def process_crc32_chunk(inputfd, crc32):
         raise Exception()
 
 def unsparse(inputfd, outputfd):
-    i = None
     total_blocks = 0
-    ret = None
-    copybuf = None
+    crc32 = 0
 
     sparse_header = SparseHeader.from_bytes(inputfd.read(SPARSE_HEADER_LEN))
+    _log.info("Read sparse_header:\n%s", repr(sparse_header))
 
     if sparse_header.magic != SPARSE_HEADER_MAGIC:
         _log.error("Bad magic")
@@ -172,12 +181,13 @@ def unsparse(inputfd, outputfd):
         raise Exception("Unknown major version number")
 
     if sparse_header.file_hdr_sz > SPARSE_HEADER_LEN:
-        inputfd.seek(sparse_header.file_hdr_sz - SPARSE_HEADER_LEN, whence=1)
+        inputfd.seek(sparse_header.file_hdr_sz - SPARSE_HEADER_LEN, 1)
 
     for i in range(sparse_header.total_chunks):
-        chunk_header = inputfd.read(CHUNK_HEADER_LEN)
+        chunk_header = ChunkHeader.from_bytes(inputfd.read(CHUNK_HEADER_LEN))
+        _log.debug("Read chunk_header:\n%s", repr(chunk_header))
         if sparse_header.chunk_hdr_sz > CHUNK_HEADER_LEN:
-            inputfd.seek(sparse_header.chunk_hdr_sz - CHUNK_HEADER_LEN, whence=1)
+            inputfd.seek(sparse_header.chunk_hdr_sz - CHUNK_HEADER_LEN, 1)
 
         if chunk_header.chunk_type == CHUNK_TYPE_RAW:
             if (chunk_header.total_sz != (sparse_header.chunk_hdr_sz +
@@ -208,7 +218,7 @@ def unsparse(inputfd, outputfd):
         else:
             _log.error("Unknown chunk type 0x%4.4x", chunk_header.chunk_type)
 
-    os.ftruncate(outputfd, total_blocks * sparse_header.blk_sz)
+    os.ftruncate(outputfd.fileno(), total_blocks * sparse_header.blk_sz)
 
     if (sparse_header.total_blks != total_blocks):
         _log.error("Wrote %d blocks, expected to write %d blocks", total_blocks, sparse_header.total_blks)
@@ -222,7 +232,7 @@ def main():
     parser.add_argument("-d", "--debug", action="store_true", help="Enable debugging")
     args = parser.parse_args()
     logging.basicConfig(level=logging.DEBUG if args.debug else logging.INFO)
-    with open(args.input_iamge, "rb") as inputfd, open(args.output_image, "wb") as outputfd:
+    with open(args.input_image, "rb") as inputfd, open(args.output_image, "wb") as outputfd:
         unsparse(inputfd, outputfd)
 
 if __name__ == "__main__":
