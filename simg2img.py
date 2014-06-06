@@ -113,18 +113,16 @@ def sparse_crc32(crc32_in, buf):
 
 def process_raw_chunk(infd, outfd, num_blocks, blk_sz, crc32):
     total_len = num_blocks * blk_sz
-    ret = 0
-    chunksize = 0
 
     while total_len:
-        chunksize =  COPY_BUF_SIZE if (total_len > COPY_BUF_SIZE) else total_len
-        copybuf = infd.read(chunksize)
-        if len(copybuf) != chunksize:
-            _log.error("read returned an error copying a raw chunk: %d %d",len(copybuf), chunksize)
+        chunk_size =  COPY_BUF_SIZE if (total_len > COPY_BUF_SIZE) else total_len
+        copybuf = infd.read(chunk_size)
+        if len(copybuf) != chunk_size:
+            _log.error("read returned an error copying a raw chunk: %d %d",len(copybuf), chunk_size)
             raise Exception()
         crc32 = sparse_crc32(crc32, copybuf)
         ret = outfd.write(copybuf)
-        if (ret != len(copybuf)):
+        if ret != len(copybuf):
             _log.error("write returned an error copying a raw chunk")
             raise Exception()
         total_len -= len(copybuf)
@@ -140,7 +138,7 @@ def process_fill_chunk(inputfd, outputfd, num_blocks, block_size, crc32):
     for i in range(COPY_BUF_SIZE / 4):
         fillbuf.extend(fill_val)
 
-    while (rest_len):
+    while rest_len:
         chunksize = COPY_BUF_SIZE if rest_len > COPY_BUF_SIZE else rest_len
         crc32 = sparse_crc32(crc32, fillbuf)
         ret = outputfd.write(fillbuf)
