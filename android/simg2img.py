@@ -4,8 +4,8 @@ __author__ = 'ivo'
 Copyright (C) 2010 The Android Open Source Project
 
 Script for converting Google Android sparse ext4 image files to regular ext4 image file.
-This code is copied and rewritten from the original Google code.
 
+This code is copied and rewritten from Google code.
 """
 
 import argparse
