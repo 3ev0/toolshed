@@ -13,6 +13,7 @@ import argparse
 import subprocess
 import hashlib
 import datetime
+import json
 
 from android import filesystem
 from android import simg2img
@@ -82,15 +83,18 @@ def unzip_images(fp, destdir):
             _log.info("Unzipped %s to %s", member.filename, destpath)
     return len(imagemembers)
 
-def build(hashdb):
+def build(hashdb, sourcesdb):
     sources = scrape_links()
+    _log.info("Using %s as sources database", sourcesdb)
     for (source_id, source, md5val) in sources:
         _log.info("Processing %s...", source)
         fn = get_filename(source)
         fp = os.path.join(TMPDIR, fn)
-        done_fp = fp + ".done"
-        if os.path.exists(done_fp):
-            _log.info("Done-file detected, this source has been processed")
+        dbif = plyvel.DB(sourcesdb, create_if_missing=True)
+        dbval = dbif.get(bytes(md5val, encoding="utf8"))
+        dbif.close()
+        if dbval:
+            _log.info("Source found in sourcesdb: %s", str(dbval, encoding="utf8"))
             _log.info("Source processed!: %s", source)
             continue
         if not os.path.exists(fp):
@@ -124,10 +128,11 @@ def build(hashdb):
         _log.info("Processing image files:\n%s", "\n".join(img_filepaths))
         for imgfp in img_filepaths:
             process_imagefile(imgfp, hashdb, source_id)
-        #shutil.rmtree(untardir)
+        shutil.rmtree(untardir)
         _log.info("Removed temp dir: %s", untardir)
-        with open(done_fp, "w") as donefh:
-            donefh.write(repr(datetime.datetime.now()))
+        dbif = plyvel.DB(sourcesdb, create_if_missing=True)
+        dbif.put(bytes(md5val, encoding="utf8"), bytes(json.dumps({"processed":str(datetime.datetime.now()), "source_id":source_id, "source":source}), encoding="utf8"))
+        dbif.close()
         _log.info("Source processed!: %s", source)
 
 
@@ -188,7 +193,8 @@ def main():
     parser.add_argument("hashdb", help="Path to existing or non-existing leveldb database to store hashes")
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
-    build(args.hashdb)
+    sourcesdb = args.hashdb.rstrip(".db") + ".sources.db"
+    build(args.hashdb, sourcesdb)
     pass
 
 if __name__ == "__main__":
