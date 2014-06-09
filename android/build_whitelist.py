@@ -7,6 +7,7 @@ import subprocess
 import hashlib
 import json
 import shutil
+import stat
 
 import plyvel
 
@@ -86,10 +87,13 @@ def explore_filesystem(rootpath, sourceid=None, threat=None, trust=None):
     batch_size = 1024
     batch = []
     total_added, total_procd, total_dupl = 0, 0, 0
-    for (root, dirs, files) in os.walk(rootpath):
+    for (root, dirs, files) in os.walk(rootpath, followlinks=False):
         for fl in files:
             fp = os.path.join(root, fl)
             _log.info("Encountered file %s", fp)
+            if stat.S_ISLNK(os.lstat(fp).st_mode):
+                _log.info("Is symlink, so skipped")
+                continue
             hashes = hash_file(fp)
             batch.append((hashes, {"source_id": sourceid,
                                    "threat":threat,
