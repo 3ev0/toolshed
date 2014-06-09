@@ -1,5 +1,19 @@
 __author__ = 'ivo'
 
+"""
+Script to build a hash list of files in AOSP Nexus Android file system images.
+The file system images are downloaded from the AOSP internet sources. Each archive file is than unpacked and
+all relevant images inside (system.img, boot.img, userdata.img, recovery.img) are mounted/unpacked and traversed.
+
+The result is a leveldb database containing md5 hashes of all Nexus files.
+This database can be used as an authenticated whitelist reference set to check encountered files for authenticity.
+
+The script creates a meta db containing information on the processed sources. This can be used to verify from which sources
+the hash values are generated.
+
+"""
+
+
 import requests
 import re
 import tempfile
@@ -36,10 +50,12 @@ def md5file(fp):
     return md5digest.hexdigest()
 
 def scrape_links():
+    """
+    Scrape links to image archive from AOSP website
+    :return: list with 3-tuple (source id, url, md5 string)
+    """
     index_url = "https://developers.google.com/android/nexus/images"
     index_page = requests.get(index_url)
-    # http.*\.tgz"
-    # "<tr id=\"(.*)\">\n<td.*\n<td><a href=\"(http.*\.tgz)\">Link</a>\n<td>([a-f0-9A-F]{32})"
     results = re.findall("<tr id=\"(.*)\">\s*<td.*\s*<td><a href=\"(http.*\.tgz)\">Link</a>\s*<td>([a-f0-9A-F]{32})", index_page.text, flags=re.M)
     _log.info("Scraped %d links from %s", len(results), index_url)
     return results
@@ -53,6 +69,11 @@ def select_interesting(members):
             yield tarinfo
 
 def untar_files(fp, destdir):
+    """
+    Untar all interesting files to destdir.
+    :param fp: The tar or tgz file.
+    :param destdir: The directory to unpack the files in
+    """
     with tarfile.open(fp) as tar:
         members = select_interesting(tar)
         for member in members:
@@ -64,7 +85,6 @@ def untar_files(fp, destdir):
                     destfh.write(blob)
                     blob = memberfh.read(4096)
             _log.info("Extracted %s to %s", member.name, destpath)
-    return True
 
 def unzip_images(fp, destdir):
     with zipfile.ZipFile(fp) as zf:
