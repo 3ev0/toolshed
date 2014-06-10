@@ -178,7 +178,7 @@ def process_imagefile(fp, hashdb, source):
         rootpath = bootimg.unpack_ramdisk(ramdisk_blob, TMPDIR)
         with open(os.path.join(rootpath, "vmlinuz"), "wb") as ofh:
             ofh.write(bootimg.extract_kernel(fp))
-    elif filesystem.is_bootloader_image(fp):
+    elif filesystem.is_bootloader_image(fp) or "bootloader" in os.path.basename(fp).lower():
         _log.info("Detected android bootloader image, not supported yet")
         rootpath = os.path.join(TMPDIR, "bootloader_content")
         if not os.path.isdir(rootpath):
